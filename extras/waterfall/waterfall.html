@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Waterfall</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; color: #8aa;
+    font-family: 'Courier New', Courier, monospace;
+    overflow: hidden;
+  }
+  #waterfall { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+  #hud {
+    position: fixed; top: 6px; left: 8px;
+    font-size: 11px; letter-spacing: 2px;
+    background: rgba(0,0,0,0.45); padding: 4px 10px; border-radius: 3px;
+    pointer-events: none; color: #8dc0ff;
+  }
+</style>
+</head>
+<body>
+<canvas id="waterfall"></canvas>
+<div id="hud">connecting…</div>
+
+<script>
+(function () {
+'use strict';
+
+// ── Config ──────────────────────────────────────────────────────────────────
+var CONFIG = {
+  // WS endpoint. If opened as file:// we fall back to localhost.
+  wsUrl: (location.protocol === 'file:' || !location.hostname)
+    ? 'ws://127.0.0.1:8081'
+    : 'ws://' + location.hostname + ':8081',
+
+  fftSize:    4096,   // power of two; higher = finer frequency bins
+  sampleRate: 48000,  // gqrx UDP Controller default
+  rowsPerSec: 120,     // scroll rate; HOP is derived
+  dbMin:      -60,    // color floor
+  dbMax:      -10,    // color ceiling
+};
+
+var HALF_N      = CONFIG.fftSize / 2;
+var HOP         = Math.max(1, Math.round(CONFIG.sampleRate / CONFIG.rowsPerSec));
+var INT16_SCALE = 1 / 32768;
+
+
+// ── Canvas ──────────────────────────────────────────────────────────────────
+var canvas  = document.getElementById('waterfall');
+var hud     = document.getElementById('hud');
+var ctx     = canvas.getContext('2d');
+var rowImg  = null;  // one-pixel-tall ImageData reused each frame
+
+function resizeCanvas() {
+  canvas.width  = Math.floor(window.innerWidth);
+  canvas.height = Math.floor(window.innerHeight);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  rowImg = null;  // width changed; re-alloc on next paint
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+
+// ── DSP: Hann window + radix-2 FFT ──────────────────────────────────────────
+var hann = (function () {
+  var N = CONFIG.fftSize, w = new Float32Array(N);
+  for (var i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
+  return w;
+})();
+
+// Precomputed complex twiddles for each stage of the FFT.
+var twR = new Float32Array(HALF_N);
+var twI = new Float32Array(HALF_N);
+(function () {
+  for (var k = 0; k < HALF_N; k++) {
+    var a = -2 * Math.PI * k / CONFIG.fftSize;
+    twR[k] = Math.cos(a);
+    twI[k] = Math.sin(a);
+  }
+})();
+
+// In-place iterative Cooley-Tukey FFT on real/imaginary split arrays.
+function fft(re, im) {
+  var n = re.length;
+
+  // Bit-reversal permutation.
+  for (var i = 0, j = 0; i < n - 1; i++) {
+    if (i < j) {
+      var tr = re[i]; re[i] = re[j]; re[j] = tr;
+      var ti = im[i]; im[i] = im[j]; im[j] = ti;
+    }
+    var k = n >> 1;
+    while (k <= j) { j -= k; k >>= 1; }
+    j += k;
+  }
+
+  // Butterflies.
+  for (var size = 2; size <= n; size <<= 1) {
+    var half = size >> 1;
+    var stride = n / size;  // into the twiddle tables
+    for (var start = 0; start < n; start += size) {
+      for (var kk = 0; kk < half; kk++) {
+        var ti2 = kk * stride;
+        var wr = twR[ti2], wi = twI[ti2];
+        var a = start + kk, b = a + half;
+        var tr = re[b] * wr - im[b] * wi;
+        var tii = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - tr;  im[b] = im[a] - tii;
+        re[a] += tr;         im[a] += tii;
+      }
+    }
+  }
+}
+
+
+// ── Colormap LUT (black → purple → cyan → yellow → white) ───────────────────
+var CMAP = (function () {
+  var lut   = new Uint8Array(256 * 3);
+  var stops = [
+    [  0,   0,   0,   0],
+    [ 64,  80,   0, 140],
+    [128,   0, 255, 255],
+    [192, 255, 255,   0],
+    [255, 255, 255, 255],
+  ];
+  for (var s = 0; s < stops.length - 1; s++) {
+    var a = stops[s], b = stops[s + 1];
+    var span = b[0] - a[0];
+    for (var i = a[0]; i <= b[0]; i++) {
+      var t = (i - a[0]) / span, o = i * 3;
+      lut[o]     = (a[1] + (b[1] - a[1]) * t) | 0;
+      lut[o + 1] = (a[2] + (b[2] - a[2]) * t) | 0;
+      lut[o + 2] = (a[3] + (b[3] - a[3]) * t) | 0;
+    }
+  }
+  return lut;
+})();
+
+
+// ── Sample ring + frame extraction ──────────────────────────────────────────
+// Holds the most recent samples. We emit one row per HOP new samples, each
+// row being the FFT of the most recent FFT_N samples (overlapping frames).
+var RING_SIZE   = Math.max(CONFIG.fftSize * 2, CONFIG.fftSize + HOP * 2);
+var ring        = new Float32Array(RING_SIZE);
+var ringWrite   = 0;  // next slot to write to
+var ringCount   = 0;  // total samples ever written (saturates at RING_SIZE)
+var unprocessed = 0;  // new samples since the last row was emitted
+
+function pushSamples(int16) {
+  for (var k = 0; k < int16.length; k++) {
+    ring[ringWrite] = int16[k] * INT16_SCALE;
+    ringWrite = (ringWrite + 1) % RING_SIZE;
+    if (ringCount   < RING_SIZE) ringCount++;
+    // Clamp backlog so a paused tab can't conjure a huge queue on resume.
+    if (unprocessed < RING_SIZE) unprocessed++;
+  }
+}
+
+// Copy the most recent FFT_N samples into frame_re[], Hann-windowed.
+// At most two linear reads across the ring — no per-sample modulo.
+var frame_re = new Float32Array(CONFIG.fftSize);
+var frame_im = new Float32Array(CONFIG.fftSize);
+
+function loadLatestFrame() {
+  var N = CONFIG.fftSize;
+  var start = (ringWrite - N + RING_SIZE) % RING_SIZE;
+  var first = Math.min(N, RING_SIZE - start);
+  for (var i = 0; i < first; i++) frame_re[i] = ring[start + i] * hann[i];
+  for (var j = first; j < N;     j++) frame_re[j] = ring[j - first] * hann[j];
+  frame_im.fill(0);
+}
+
+
+// ── Row rendering ───────────────────────────────────────────────────────────
+var rowCount = 0;
+
+function paintRow() {
+  loadLatestFrame();
+  fft(frame_re, frame_im);
+
+  var w = canvas.width;
+  if (!rowImg || rowImg.width !== w) rowImg = ctx.createImageData(w, 1);
+  var px = rowImg.data;
+
+  var binScale = HALF_N / w;
+  var normDiv  = HALF_N * HALF_N;
+  var dbRange  = CONFIG.dbMax - CONFIG.dbMin;
+
+  for (var x = 0; x < w; x++) {
+    // Peak-hold across the bins this pixel covers (stretches low-res FFTs).
+    var lo = (x       * binScale) | 0;
+    var hi = ((x + 1) * binScale) | 0;
+    if (hi <= lo) hi = lo + 1;
+    var peak = 0;
+    for (var b = lo; b < hi; b++) {
+      var mag = frame_re[b] * frame_re[b] + frame_im[b] * frame_im[b];
+      if (mag > peak) peak = mag;
+    }
+    var db = 10 * Math.log10(peak / normDiv + 1e-18);
+    var t  = (db - CONFIG.dbMin) / dbRange;
+    var ci = t <= 0 ? 0 : (t >= 1 ? 255 : (t * 255) | 0);
+    var lut = ci * 3, off = x * 4;
+    px[off    ] = CMAP[lut];
+    px[off + 1] = CMAP[lut + 1];
+    px[off + 2] = CMAP[lut + 2];
+    px[off + 3] = 255;
+  }
+
+  // Scroll the canvas down one pixel, stamp the new row at the top.
+  ctx.drawImage(canvas, 0, 1);
+  ctx.putImageData(rowImg, 0, 0);
+  rowCount++;
+}
+
+function drainRows() {
+  while (unprocessed >= HOP && ringCount >= CONFIG.fftSize) {
+    unprocessed -= HOP;
+    paintRow();
+  }
+}
+
+
+// ── WebSocket ───────────────────────────────────────────────────────────────
+var ws = null;
+var bytesIn = 0;
+
+function connect() {
+  hud.textContent = 'connecting ' + CONFIG.wsUrl;
+  ws = new WebSocket(CONFIG.wsUrl);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen    = function () { hud.textContent = 'live · FFT ' + CONFIG.fftSize + ' · ' + CONFIG.sampleRate / 1000 + 'k'; };
+  ws.onclose   = function () { hud.textContent = 'disconnected, retrying…'; setTimeout(connect, 1500); };
+  ws.onerror   = function () {};
+  ws.onmessage = function (e) {
+    if (typeof e.data === 'string') return;
+    var samples = new Int16Array(e.data);
+    bytesIn += e.data.byteLength;
+    pushSamples(samples);
+    drainRows();
+  };
+}
+connect();
+
+
+// ── HUD stats (kbps + rows/sec) ─────────────────────────────────────────────
+(function () {
+  var lastBytes = 0, lastRows = 0, lastT = performance.now();
+  setInterval(function () {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    var now  = performance.now();
+    var dt   = (now - lastT) / 1000;
+    var kbps = ((bytesIn  - lastBytes) * 8 / 1000 / dt).toFixed(1);
+    var rps  = ((rowCount - lastRows) / dt).toFixed(1);
+    hud.textContent = 'live · ' + kbps + ' kbps · ' + rps + ' rows/s';
+    lastBytes = bytesIn; lastRows = rowCount; lastT = now;
+  }, 1500);
+})();
+
+})();
+</script>
+</body>
+</html>

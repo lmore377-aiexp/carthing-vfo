@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=800,height=480,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SDR</title>
+<style>
+:root {
+  --bg:        #0b0d12;
+  --bg2:       #0f1118;
+  --bg3:       #161a26;
+  --border:    #2a3354;
+  --dim:       #3d4c72;
+  --muted:     #6f7f9e;
+  --text:      #a0b0c8;
+  --bright:    #dae4f6;
+  --green:     #39ff14;
+  --green-dim: #3d9022;
+  --blue:      #0090ff;
+  --cyan:      #00ccff;
+  --red:       #ff3333;
+  --amber:     #ffaa00;
+
+  --digit-glow: 0 0 24px #39ff1480, 0 0 48px #39ff1430;
+  --dot-glow:   0 0 7px var(--green);
+}
+html.light {
+  --bg:        #eef0f6;
+  --bg2:       #e1e4ed;
+  --bg3:       #d1d6e2;
+  --border:    #b0b8cc;
+  --dim:       #8a94ac;
+  --muted:     #565f7a;
+  --text:      #3a4360;
+  --bright:    #0b1226;
+  --green:     #0d7a05;
+  --green-dim: #89bf7a;
+  --blue:      #0060c0;
+  --cyan:      #006f9e;
+  --red:       #cc1818;
+  --amber:     #c06600;
+
+  --digit-glow: none;
+  --dot-glow:   none;
+}
+html.light .mode-btn.active {
+  background: #d4e6ff; border-color: var(--blue); color: var(--blue);
+  box-shadow: none;
+}
+html.light .rig-opt.active, html.light .bl-opt.active,
+html.light .theme-opt.active, html.light .prox-opt.active {
+  background: #d4e6ff; box-shadow: none;
+}
+html.light .preset-tile:active,
+html.light .band-btn:active { background: #c8d6f0; }
+html.light .fd-sep              { color: #c5dfbc; }
+html.light .mode-btn:active,
+html.light .adj-btn:active,
+html.light .spin-btn:active,
+html.light .stab:active         { background: #c8d6f0; color: var(--blue); }
+html.light #cfg-connect         { background: #dce9ff; color: var(--blue); }
+html.light #cfg-connect:active  { background: #c0d4f0; }
+html.light #cfg-cancel:active   { background: #dfe3ec; }
+html.light #meter-track         { background: #e0e4ec; }
+html.light #preset-popup        { background: rgba(238,240,246,0.97); }
+html.light #settings            { background: rgba(220,224,234,0.88); }
+html.light #toast               { background: rgba(220,232,250,0.98); color: var(--blue); }
+html.light #rig-status:active   { background: #0000000f; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 800px; height: 480px; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: 'Courier New', Courier, monospace;
+  display: flex; flex-direction: column;
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ── Top bar ── */
+#topbar {
+  flex: 0 0 38px; display: flex; align-items: center;
+  padding: 0 14px; gap: 16px;
+  background: var(--bg2); border-bottom: 1px solid var(--border);
+}
+#title { font-size: 13px; font-weight: bold; color: var(--blue); letter-spacing: 4px; }
+#step-row {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-size: 11px; color: var(--muted); letter-spacing: 1px;
+}
+#step-row span { color: var(--cyan); font-size: 13px; font-weight: bold; }
+#rig-status {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; letter-spacing: 1px; cursor: pointer;
+  padding: 4px 8px; border-radius: 4px; transition: background 0.1s;
+}
+#rig-status:active { background: #ffffff10; }
+#status-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--dim);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+#status-dot.ok  { background: var(--green); box-shadow: var(--dot-glow); }
+#status-dot.err { background: var(--red); }
+#status-txt { color: var(--muted); }
+
+/* ── Frequency display ── */
+#freq-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+#freq-digits { display: flex; align-items: baseline; }
+.fd-digit {
+  font-size: 88px; font-weight: bold;
+  color: var(--green-dim); cursor: pointer;
+  transition: color 0.15s, text-shadow 0.15s;
+  padding: 0 1px;
+}
+.fd-digit.active {
+  color: var(--green);
+  text-shadow: var(--digit-glow);
+}
+.fd-digit:active { opacity: 0.6; }
+.fd-sep {
+  font-size: 72px; font-weight: bold; color: #1e4812;
+  padding: 0 2px; align-self: flex-end; padding-bottom: 6px; line-height: 1;
+}
+
+/* ── Mode row ── */
+#mode-row {
+  flex: 0 0 50px; display: flex; align-items: center;
+  padding: 0 8px; gap: 6px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.mode-btn {
+  flex: 1; height: 34px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); font-family: 'Courier New', monospace;
+  font-size: 11px; font-weight: bold; letter-spacing: 1px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.1s;
+}
+.mode-btn.active {
+  background: #001830; border-color: var(--blue); color: var(--cyan);
+  box-shadow: 0 0 10px #0040ff30, inset 0 0 10px #00204020;
+}
+.mode-btn:active { background: #002040; }
+
+/* ── BW row (gqrx only) ── */
+#bw-row {
+  display: none;
+  flex: 0 0 46px; align-items: center;
+  padding: 0 14px; gap: 10px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+#bw-row.visible { display: flex; padding: 0; }
+.bw-half {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  gap: 10px; padding: 0 12px;
+}
+.bw-half + .bw-half { border-left: 1px solid var(--border); }
+#bw-label, #sql-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); flex-shrink: 0; }
+#bw-val {
+  flex: 1; font-size: 20px; font-weight: bold; color: var(--amber);
+  letter-spacing: 1px; text-align: center;
+}
+#sql-val {
+  flex: 1; font-size: 18px; font-weight: bold; color: var(--muted);
+  text-align: center;
+}
+.adj-btn {
+  flex-shrink: 0; width: 34px; height: 30px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); font-size: 15px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s;
+}
+.adj-btn:active { background: #1a2a40; color: var(--amber); }
+
+/* ── S-meter ── */
+#meter-area {
+  flex: 0 0 90px; display: flex; align-items: center;
+  padding: 0 14px; gap: 12px; background: var(--bg);
+}
+#meter-tag { font-size: 10px; letter-spacing: 2px; color: var(--muted); min-width: 14px; }
+#meter-wrap { flex: 1; }
+#meter-scale { display: flex; position: relative; height: 14px; margin-bottom: 4px; }
+.scale-mark {
+  position: absolute; font-size: 9px; color: var(--dim);
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.scale-mark::after { content: ''; width: 1px; height: 4px; background: var(--dim); }
+#meter-track {
+  height: 22px; background: #06080e;
+  border: 1px solid var(--border); border-radius: 2px;
+  position: relative; overflow: hidden;
+}
+#meter-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(to right, #00bb44 0%, #44bb00 45%, #aaaa00 65%, #cc5500 80%, #ee1111 100%);
+  transition: width 0.12s ease-out;
+}
+#meter-peak {
+  position: absolute; top: 0; bottom: 0;
+  width: 2px; background: var(--amber);
+  box-shadow: 0 0 4px var(--amber);
+  display: none;
+}
+#meter-val {
+  font-size: 13px; font-weight: bold;
+  min-width: 54px; text-align: right; letter-spacing: 1px; font-style: italic;
+}
+
+/* ── Preset popup ── */
+#preset-backdrop {
+  display: none; position: absolute; top: 0; left: 0; width: 800px; height: 480px;
+  z-index: 49;
+}
+#preset-backdrop.open { display: block; }
+#preset-popup {
+  position: absolute; top: 0; left: 0; width: 800px;
+  background: rgba(9,11,18,0.97); border-bottom: 1px solid var(--border);
+  transform: translateY(-100%); transition: transform 0.18s ease-out;
+  z-index: 50; pointer-events: none;
+}
+#preset-popup.open { transform: translateY(0); pointer-events: auto; }
+#preset-list { display: flex; padding: 8px; gap: 8px; }
+.preset-tile {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg3); cursor: pointer; transition: background 0.1s;
+}
+.preset-tile:active { background: #1a2040; }
+.pt-num { font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+.pt-info { flex: 1; }
+.pt-freq { font-size: 13px; font-weight: bold; color: var(--bright); letter-spacing: 1px; }
+.pt-mode { font-size: 10px; color: var(--muted); letter-spacing: 2px; margin-top: 2px; }
+
+/* ── Toast ── */
+#toast {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,30,60,0.95); border: 1px solid var(--blue);
+  color: var(--cyan); font-size: 11px; letter-spacing: 3px;
+  padding: 5px 16px; border-radius: 4px; white-space: nowrap;
+  opacity: 0; transition: opacity 0.12s; pointer-events: none; z-index: 200;
+}
+#toast.show { opacity: 1; }
+
+/* ── Settings overlay ── */
+#settings {
+  display: none; position: absolute; top: 0; left: 0; width: 800px; height: 480px;
+  background: rgba(5,7,12,0.94);
+  align-items: center; justify-content: center; z-index: 100;
+}
+#settings.open { display: flex; }
+#settings-panel {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 22px 28px; width: 600px;
+}
+#settings-tabs {
+  display: flex; margin: -4px -4px 18px -4px;
+  border-bottom: 1px solid var(--border);
+}
+.stab {
+  flex: 1; padding: 10px 0; text-align: center;
+  font-size: 12px; letter-spacing: 4px; color: var(--muted);
+  cursor: pointer; transition: all 0.1s;
+  border-bottom: 2px solid transparent;
+}
+.stab.active { color: var(--cyan); border-bottom-color: var(--blue); }
+.stab:active { background: #ffffff08; }
+.spane { display: none; }
+.spane.active { display: block; }
+.cfg-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.cfg-label { font-size: 11px; letter-spacing: 2px; color: var(--muted); min-width: 52px; }
+
+/* rig selector */
+#rig-selector, #bl-selector, #theme-selector, #prox-selector { display: flex; gap: 6px; flex: 1; }
+.rig-opt, .bl-opt, .theme-opt, .prox-opt {
+  flex: 1; height: 38px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-family: 'Courier New', monospace;
+  font-size: 13px; font-weight: bold; letter-spacing: 2px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: all 0.1s;
+}
+.rig-opt.active, .bl-opt.active, .theme-opt.active, .prox-opt.active {
+  background: #001830; border-color: var(--blue); color: var(--cyan);
+  box-shadow: 0 0 10px #0040ff30;
+}
+#bl-selector, #theme-selector, #prox-selector { max-width: 220px; }
+
+/* ── Proximity auto-hide ── */
+#bw-row.visible { transition: flex-basis 0.18s ease-out, opacity 0.14s ease-out, border-color 0.14s; }
+body.ui-idle #bw-row.visible {
+  flex-basis: 0; opacity: 0; pointer-events: none;
+  border-bottom-color: transparent;
+  overflow: hidden;
+}
+
+/* ── Audio panel (gqrx only) ── */
+#audio-panel {
+  flex: 0 0 0px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  background: var(--bg2); border-top: 1px solid var(--border);
+  opacity: 0; overflow: hidden; pointer-events: none;
+  transition: flex-basis 0.18s ease-out, opacity 0.16s ease-out, padding 0.18s ease-out;
+}
+body.ap-open #audio-panel {
+  flex: 0 0 60px; opacity: 1; pointer-events: auto;
+}
+#af-wrap {
+  flex: 1; display: flex; align-items: center; gap: 10px;
+}
+.ap-label { font-size: 10px; letter-spacing: 2px; color: var(--muted); min-width: 28px; }
+#af-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 8px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 4px;
+  outline: none; padding: 0;
+}
+#af-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--cyan); border: 2px solid var(--blue);
+  box-shadow: 0 0 8px #0040ff40; cursor: pointer;
+}
+.ap-btn {
+  flex: 0 0 78px; height: 38px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-family: 'Courier New', monospace;
+  font-size: 12px; font-weight: bold; letter-spacing: 2px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.1s;
+}
+.ap-btn:active { background: #1a2a40; }
+#rec-btn.active {
+  background: #380000; border-color: var(--red); color: var(--red);
+  box-shadow: 0 0 10px #ff000030;
+}
+#dsp-btn.active {
+  background: #003020; border-color: var(--green); color: var(--green);
+  box-shadow: 0 0 10px #00ff0030;
+}
+html.light #rec-btn.active { background: #ffdcdc; box-shadow: none; }
+html.light #dsp-btn.active { background: #d8f0cc; box-shadow: none; }
+html.light .ap-btn:active  { background: #c8d6f0; }
+
+/* backlight slider */
+#bl-slider {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 8px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 4px;
+  outline: none; margin: 0 2px; padding: 0;
+  transition: opacity 0.15s;
+}
+#bl-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--cyan); border: 2px solid var(--blue);
+  box-shadow: 0 0 10px #0040ff40; cursor: pointer;
+}
+#bl-slider:disabled { opacity: 0.3; }
+#bl-slider:disabled::-webkit-slider-thumb { background: var(--dim); border-color: var(--border); box-shadow: none; }
+
+/* octet / port spinners */
+.octet-group { display: flex; align-items: center; gap: 4px; flex: 1; }
+.octet-sep { color: var(--dim); font-size: 18px; padding: 0 2px; }
+.spinner { display: flex; flex-direction: column; align-items: center; }
+.spinner-val {
+  font-size: 20px; font-weight: bold; color: var(--bright); letter-spacing: 1px;
+  min-width: 44px; text-align: center; line-height: 1.2;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px; padding: 3px 0;
+}
+.spinner-val.wide { min-width: 62px; }
+.spin-btn {
+  width: 44px; height: 24px; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 3px;
+  color: var(--muted); font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s; margin: 2px 0;
+}
+.spin-btn.wide { width: 62px; }
+.spin-btn:active { background: #1a2a50; color: var(--cyan); }
+#cfg-hint { font-size: 10px; color: var(--dim); letter-spacing: 1px; text-align: center; margin-bottom: 10px; }
+#cfg-connect {
+  display: block; width: 100%; height: 42px; margin-top: 4px;
+  background: #001c38; border: 1px solid var(--blue); border-radius: 4px;
+  color: var(--cyan); font-family: 'Courier New', monospace;
+  font-size: 13px; font-weight: bold; letter-spacing: 4px; cursor: pointer;
+  transition: background 0.1s;
+}
+#cfg-connect:active { background: #002a50; }
+#cfg-cancel {
+  display: block; width: 100%; height: 34px; margin-top: 6px;
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--muted); font-family: 'Courier New', monospace;
+  font-size: 11px; letter-spacing: 3px; cursor: pointer; transition: background 0.1s;
+}
+#cfg-cancel:active { background: #1a1a2a; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div id="title">SDR</div>
+  <div id="step-row">STEP <span id="step-val">1 kHz</span></div>
+  <div id="rig-status">
+    <div id="status-dot"></div>
+    <span id="status-txt">NO RIG</span>
+  </div>
+</div>
+
+<div id="freq-area">
+  <div id="freq-digits">
+    <span class="fd-digit" data-step="1000000000" id="fd-g">0</span>
+    <span class="fd-sep">.</span>
+    <span class="fd-digit" data-step="100000000" id="fd-m2">0</span><span class="fd-digit" data-step="10000000" id="fd-m1">1</span><span class="fd-digit" data-step="1000000" id="fd-m0">4</span>
+    <span class="fd-sep">.</span>
+    <span class="fd-digit" data-step="100000" id="fd-k2">2</span><span class="fd-digit" data-step="10000" id="fd-k1">0</span><span class="fd-digit" data-step="1000" id="fd-k0">0</span>
+    <span class="fd-sep">.</span>
+    <span class="fd-digit" data-step="100" id="fd-h2">0</span><span class="fd-digit" data-step="10" id="fd-h1">0</span><span class="fd-digit" data-step="1" id="fd-h0">0</span>
+  </div>
+</div>
+
+<div id="mode-row"></div>
+
+<div id="bw-row">
+  <div class="bw-half" id="bw-half">
+    <div id="bw-label">BW</div>
+    <button class="adj-btn" id="bw-dn">−</button>
+    <div id="bw-val">—</div>
+    <button class="adj-btn" id="bw-up">+</button>
+  </div>
+  <div class="bw-half" id="sql-half">
+    <div id="sql-label">SQL</div>
+    <button class="adj-btn" id="sql-dn">−</button>
+    <div id="sql-val">—</div>
+    <button class="adj-btn" id="sql-up">+</button>
+  </div>
+</div>
+
+<div id="meter-area">
+  <div id="meter-tag">SIG</div>
+  <div id="meter-wrap">
+    <div id="meter-scale"></div>
+    <div id="meter-track">
+      <div id="meter-fill"></div>
+      <div id="meter-peak"></div>
+    </div>
+  </div>
+  <div id="meter-val">N/A</div>
+</div>
+
+<div id="audio-panel">
+  <div id="af-wrap">
+    <div class="ap-label">VOL</div>
+    <input type="range" id="af-slider" min="-80" max="50" step="1" value="0">
+  </div>
+  <button class="ap-btn" id="rec-btn">REC</button>
+  <button class="ap-btn" id="dsp-btn">DSP</button>
+</div>
+
+<div id="toast"></div>
+<div id="preset-backdrop"></div>
+<div id="preset-popup"><div id="preset-list"></div></div>
+
+<!-- Settings overlay -->
+<div id="settings">
+  <div id="settings-panel">
+    <div id="settings-tabs">
+      <div class="stab active" data-tab="rig">RIG</div>
+      <div class="stab"        data-tab="ct">CAR THING</div>
+    </div>
+
+    <div class="spane active" data-pane="rig">
+      <div class="cfg-row">
+        <div class="cfg-label">RIG</div>
+        <div id="rig-selector">
+          <div class="rig-opt" data-rig="auto">AUTO</div>
+          <div class="rig-opt" data-rig="sdrpp">SDR++</div>
+          <div class="rig-opt" data-rig="gqrx">GQRX</div>
+        </div>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">HOST</div>
+        <div class="octet-group" id="octet-group"></div>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">PORT</div>
+        <div class="spinner">
+          <button class="spin-btn wide" data-target="port" data-dir="1">▲</button>
+          <div class="spinner-val wide" id="port-val">4532</div>
+          <button class="spin-btn wide" data-target="port" data-dir="-1">▼</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="spane" data-pane="ct">
+      <div class="cfg-row">
+        <div class="cfg-label">LIGHT</div>
+        <div id="bl-selector">
+          <div class="bl-opt" data-bl="auto">AUTO</div>
+          <div class="bl-opt" data-bl="manual">MANUAL</div>
+        </div>
+      </div>
+      <div class="cfg-row" id="bl-slider-row">
+        <div class="cfg-label"></div>
+        <input type="range" id="bl-slider" min="0" max="255" value="128">
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">THEME</div>
+        <div id="theme-selector">
+          <div class="theme-opt" data-theme="auto">AUTO</div>
+          <div class="theme-opt" data-theme="dark">DARK</div>
+          <div class="theme-opt" data-theme="light">LIGHT</div>
+        </div>
+      </div>
+      <div class="cfg-row">
+        <div class="cfg-label">PROX HIDE</div>
+        <div id="prox-selector">
+          <div class="prox-opt" data-prox="on">ON</div>
+          <div class="prox-opt" data-prox="off">OFF</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cfg-hint"></div>
+    <button id="cfg-connect">APPLY</button>
+    <button id="cfg-cancel">CANCEL</button>
+  </div>
+</div>
+
+<script>
+(function () {
+'use strict';
+
+// ── Rig profiles ───────────────────────────────────────────────────────────
+// modeGroups: each entry has id (key), label (button text when inactive),
+// and modes[] (actual rigctl strings; >1 means tap-to-cycle sub-modes).
+var PROFILES = {
+  sdrpp: {
+    modeGroups: [
+      {id:'FM',  label:'FM',  modes:['FM']},
+      {id:'AM',  label:'AM',  modes:['AM']},
+      {id:'USB', label:'USB', modes:['USB']},
+      {id:'LSB', label:'LSB', modes:['LSB']},
+      {id:'WFM', label:'WFM', modes:['WFM']},
+      {id:'DSB', label:'DSB', modes:['DSB']},
+      {id:'CW',  label:'CW',  modes:['CW']},
+      {id:'RAW', label:'RAW', modes:['RAW']},
+    ],
+    hasBw: false, hasSql: false, defHost: '192.168.7.1',
+  },
+  gqrx: {
+    modeGroups: [
+      {id:'RAW', label:'RAW', modes:['RAW']},
+      {id:'AM',  label:'AM',  modes:['AM','AMS']},
+      {id:'LSB', label:'LSB', modes:['LSB']},
+      {id:'USB', label:'USB', modes:['USB']},
+      {id:'CW',  label:'CW',  modes:['CWL','CWU']},
+      {id:'FM',  label:'NFM', modes:['FM']},
+      {id:'WFM', label:'WFM', modes:['WFM','WFM_ST','WFM_ST_OIRT']},
+    ],
+    hasBw: true, hasSql: true, defHost: '192.168.7.1',
+  },
+};
+
+// display labels for active sub-modes
+var MODE_LABELS = {
+  'AMS': 'AMS', 'CWL': 'CW-L', 'CWU': 'CW-U',
+  'WFM_ST': 'ST', 'WFM_ST_OIRT': 'OIRT',
+};
+
+// ── dB meter scale ─────────────────────────────────────────────────────────
+var DB_MIN = -100, DB_MAX = 0;
+(function buildScale() {
+  var marks = [-100, -80, -60, -40, -20, 0];
+  var el = document.getElementById('meter-scale');
+  marks.forEach(function(v) {
+    var pct = (v - DB_MIN) / (DB_MAX - DB_MIN) * 100;
+    var d = document.createElement('div');
+    d.className = 'scale-mark';
+    d.style.left = pct + '%';
+    d.textContent = v === 0 ? '0' : String(v);
+    el.appendChild(d);
+  });
+})();
+
+// ── State ──────────────────────────────────────────────────────────────────
+var state = {
+  freq: 14200000, mode: 'FM', bw: null,
+  strength: null, sql: null, rig_ok: false,
+  af: null, rec: null, dsp: null,
+  cfg_host: '192.168.7.1', cfg_port: 0, cfg_rig: 'auto',
+  rig: null,  // active detected rig type ('sdrpp' or 'gqrx')
+  bl_mode: 'auto', bl_brightness: 128,
+  prox: null,
+};
+
+function activeRig() {
+  if (state.rig) return state.rig;
+  if (state.cfg_rig && state.cfg_rig !== 'auto') return state.cfg_rig;
+  return 'sdrpp'; // fallback layout before auto-detect completes
+}
+
+var STEPS   = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
+var stepIdx = 3;
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+var ws = null;
+function connectWS() {
+  ws = new WebSocket('ws://127.0.0.1:8080');
+  ws.onopen = function() { render(); };
+  ws.onmessage = function(e) {
+    var msg; try { msg = JSON.parse(e.data); } catch(err) { return; }
+    if (msg.freq     !== undefined) state.freq     = msg.freq;
+    if (msg.mode     !== undefined) state.mode     = msg.mode;
+    if (msg.bw       !== undefined) state.bw       = msg.bw;
+    if (msg.strength !== undefined) state.strength = msg.strength;
+    if (msg.sql      !== undefined) state.sql      = msg.sql;
+    if (msg.rig_ok   !== undefined) state.rig_ok   = msg.rig_ok;
+    if (msg.cfg_host !== undefined) state.cfg_host = msg.cfg_host;
+    if (msg.cfg_port !== undefined) state.cfg_port = msg.cfg_port;
+    if (msg.cfg_rig  !== undefined) state.cfg_rig  = msg.cfg_rig;
+    if (msg.rig !== undefined && msg.rig !== state.rig) {
+      state.rig = msg.rig;
+      rebuildModeRow();
+    }
+    if (msg.bl_mode       !== undefined) state.bl_mode       = msg.bl_mode;
+    if (msg.bl_brightness !== undefined) {
+      state.bl_brightness = msg.bl_brightness;
+      if (typeof reapplyTheme === 'function') reapplyTheme();
+    }
+    if (msg.af  !== undefined) state.af  = msg.af;
+    if (msg.rec !== undefined) state.rec = msg.rec;
+    if (msg.dsp !== undefined) state.dsp = msg.dsp;
+    if (typeof syncAudioPanel === 'function') syncAudioPanel();
+    if (msg.prox          !== undefined) {
+      state.prox = msg.prox;
+      if (typeof bumpActive === 'function' && msg.prox >= PROX_WAKE) {
+        bumpActive();
+        if (typeof checkIdle === 'function') checkIdle();  // wake instantly
+      }
+    }
+    render();
+  };
+  ws.onclose = function() { state.rig_ok = false; render(); setTimeout(connectWS, 2000); };
+  ws.onerror = function() {};
+}
+function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function pad(n, len) { var s=String(n); while(s.length<len) s='0'+s; return s; }
+
+function stepLabel(hz) {
+  if (hz >= 1000000000) return (hz/1000000000)+' GHz';
+  if (hz >= 1000000)    return (hz/1000000)+' MHz';
+  if (hz >= 1000)       return (hz/1000)+' kHz';
+  return hz+' Hz';
+}
+
+function bwLabel(hz) {
+  if (!hz) return '—';
+  if (hz >= 1000) return (hz/1000).toFixed(hz % 1000 === 0 ? 0 : 1)+' kHz';
+  return hz+' Hz';
+}
+
+function bwStep(hz) {
+  if (hz < 2000)  return 100;
+  if (hz < 20000) return 500;
+  return 5000;
+}
+
+function dbToPct(db) { return Math.max(0, Math.min(100, (db - DB_MIN) / (DB_MAX - DB_MIN) * 100)); }
+
+// ── Mode row (rebuilt when rig changes) ───────────────────────────────────
+function rebuildModeRow() {
+  var row = document.getElementById('mode-row');
+  var profile = PROFILES[activeRig()];
+  row.innerHTML = '';
+  profile.modeGroups.forEach(function(group) {
+    var btn = document.createElement('div');
+    btn.className = 'mode-btn';
+    btn.dataset.groupId = group.id;
+    btn.textContent = group.label;
+    btn.addEventListener('click', function() {
+      var idx = group.modes.indexOf(state.mode);
+      setMode(idx === -1 ? group.modes[0] : group.modes[(idx+1) % group.modes.length]);
+    });
+    row.appendChild(btn);
+  });
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+var DIG_STEPS = [1000000000,100000000,10000000,1000000,100000,10000,1000,100,10,1];
+var DIG_IDS   = ['fd-g','fd-m2','fd-m1','fd-m0','fd-k2','fd-k1','fd-k0','fd-h2','fd-h1','fd-h0'];
+
+function render() {
+  var profile = PROFILES[activeRig()];
+  var hz   = Math.max(0, Math.round(state.freq));
+  var step = STEPS[stepIdx];
+
+  for (var di = 0; di < 10; di++) {
+    var del = document.getElementById(DIG_IDS[di]);
+    del.textContent = String(Math.floor(hz / DIG_STEPS[di]) % 10);
+    del.className   = 'fd-digit' + (step === DIG_STEPS[di] ? ' active' : '');
+  }
+
+  document.getElementById('step-val').textContent = stepLabel(step);
+
+  var dot = document.getElementById('status-dot');
+  var txt = document.getElementById('status-txt');
+  if (!ws || ws.readyState !== 1) {
+    dot.className='err'; txt.textContent='NO WS';
+  } else if (!state.rig_ok) {
+    dot.className='err'; txt.textContent='NO RIG';
+  } else {
+    dot.className='ok';
+    var rigName = state.rig === 'gqrx' ? 'GQRX' : 'SDR++';
+    txt.textContent = rigName + ' ' + state.cfg_host + ':' + state.cfg_port;
+  }
+
+  // mode buttons
+  var mbtns = document.querySelectorAll('.mode-btn');
+  for (var i = 0; i < mbtns.length; i++) {
+    var mbtn = mbtns[i];
+    var gid  = mbtn.dataset.groupId;
+    var grp  = null;
+    for (var gi = 0; gi < profile.modeGroups.length; gi++) {
+      if (profile.modeGroups[gi].id === gid) { grp = profile.modeGroups[gi]; break; }
+    }
+    if (!grp) continue;
+    var active = grp.modes.indexOf(state.mode) !== -1;
+    mbtn.className = 'mode-btn' + (active ? ' active' : '');
+    mbtn.textContent = (active && grp.modes.length > 1)
+      ? (MODE_LABELS[state.mode] || state.mode) : grp.label;
+  }
+
+  // BW row
+  var bwRow = document.getElementById('bw-row');
+  if (profile.hasBw) {
+    bwRow.classList.add('visible');
+    document.getElementById('bw-val').textContent = bwLabel(state.bw);
+    document.getElementById('sql-val').textContent = state.sql !== null
+      ? state.sql.toFixed(0)+' dB' : '—';
+  } else {
+    bwRow.classList.remove('visible');
+  }
+
+  document.getElementById('meter-area').style.display = profile.hasBw ? '' : 'none';
+
+  // dB meter
+  if (state.strength !== null) {
+    var db  = Math.max(DB_MIN, Math.min(DB_MAX, state.strength));
+    var pct = dbToPct(db);
+    document.getElementById('meter-fill').style.width = pct+'%';
+    document.getElementById('meter-val').textContent  = db.toFixed(1)+' dB';
+    document.getElementById('meter-val').style.color  = 'var(--bright)';
+    var peak = document.getElementById('meter-peak');
+    if (state.sql !== null) {
+      peak.style.display = 'block';
+      peak.style.left    = dbToPct(state.sql) + '%';
+    } else {
+      peak.style.display = 'none';
+    }
+  } else {
+    document.getElementById('meter-fill').style.width  = '0%';
+    document.getElementById('meter-val').textContent   = 'N/A';
+    document.getElementById('meter-val').style.color   = 'var(--dim)';
+    document.getElementById('meter-peak').style.display = 'none';
+  }
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────
+function tune(delta) {
+  var MAX = 10000000000;  // 10 GHz — matches single GHz digit
+  var f = state.freq + delta * STEPS[stepIdx];
+  state.freq = ((f % MAX) + MAX) % MAX;
+  send({cmd:'set_freq', freq:state.freq}); render();
+}
+function cycleStep(dir) { stepIdx=(stepIdx+(dir||1)+STEPS.length)%STEPS.length; render(); }
+
+function setMode(mode) {
+  var bw = state.bw || 0;
+  state.mode = mode;
+  send({cmd:'set_mode', mode:mode, bw:bw}); render();
+}
+function cycleMode() {
+  var profile = PROFILES[activeRig()];
+  var allModes = [];
+  profile.modeGroups.forEach(function(g) { allModes = allModes.concat(g.modes); });
+  setMode(allModes[(allModes.indexOf(state.mode)+1) % allModes.length]);
+}
+
+function adjustBw(dir) {
+  if (state.bw === null) return;
+  var step = bwStep(state.bw);
+  var bw = Math.max(100, state.bw + dir*step);
+  state.bw = bw;
+  send({cmd:'set_bw', bw:bw}); render();
+}
+
+function adjustSql(dir) {
+  if (state.sql === null) return;
+  var sql = Math.max(-150, Math.min(0, state.sql + dir));
+  state.sql = sql;
+  send({cmd:'set_sql', sql:sql}); render();
+}
+
+// ── BW / SQL buttons — press-and-hold repeat ───────────────────────────────
+(function() {
+  var _rTimer = null;
+  var _rInterval = null;
+
+  function startRepeat(fn) {
+    fn(); // fire immediately on press
+    _rTimer = setTimeout(function() {
+      _rInterval = setInterval(fn, 80);
+    }, 400);
+  }
+
+  function stopRepeat() {
+    clearTimeout(_rTimer);
+    clearInterval(_rInterval);
+    _rTimer = null;
+    _rInterval = null;
+  }
+
+  function holdBtn(el, fn) {
+    el.addEventListener('mousedown',  function(e) { e.preventDefault(); startRepeat(fn); });
+    el.addEventListener('touchstart', function(e) { e.preventDefault(); startRepeat(fn); }, {passive:false});
+    el.addEventListener('mouseup',    stopRepeat);
+    el.addEventListener('mouseleave', stopRepeat);
+    el.addEventListener('touchend',   stopRepeat);
+    el.addEventListener('touchcancel',stopRepeat);
+  }
+
+  holdBtn(document.getElementById('bw-dn'),  function() { adjustBw(-1); });
+  holdBtn(document.getElementById('bw-up'),  function() { adjustBw(1); });
+  holdBtn(document.getElementById('sql-dn'), function() { adjustSql(-1); });
+  holdBtn(document.getElementById('sql-up'), function() { adjustSql(1); });
+})();
+
+// ── Swipe gestures ────────────────────────────────────────────────────────
+function makeSwipeable(el, onStep) {
+  var PX = 24;
+  var startX = null, lastX = null, accum = 0, swiped = false;
+
+  el.addEventListener('touchstart', function(e) {
+    startX = e.touches[0].clientX;
+    lastX  = startX;
+    accum  = 0;
+    swiped = false;
+  }, {passive: true});
+
+  el.addEventListener('touchmove', function(e) {
+    if (startX === null) return;
+    var x  = e.touches[0].clientX;
+    accum += x - lastX;
+    lastX  = x;
+    if (Math.abs(x - startX) > 10) swiped = true;
+    var steps = Math.trunc(accum / PX);
+    if (steps !== 0) { onStep(steps); accum -= steps * PX; }
+  }, {passive: true});
+
+  el.addEventListener('touchend', function() { startX = null; });
+
+  // suppress click on child elements after a swipe (capture phase fires first)
+  el.addEventListener('click', function(e) {
+    if (swiped) { swiped = false; e.stopPropagation(); }
+  }, true);
+}
+
+makeSwipeable(document.getElementById('freq-area'), function(steps) {
+  tune(steps);
+});
+makeSwipeable(document.getElementById('bw-half'), function(steps) {
+  for (var i = 0; i < Math.abs(steps); i++) adjustBw(steps > 0 ? 1 : -1);
+});
+makeSwipeable(document.getElementById('sql-half'), function(steps) {
+  for (var i = 0; i < Math.abs(steps); i++) adjustSql(steps > 0 ? 1 : -1);
+});
+
+// ── Settings overlay ───────────────────────────────────────────────────────
+var DEFAULT_PORTS = {sdrpp: 4532, gqrx: 7356};
+var cfgOctets = [192,168,7,1];
+var cfgPort   = 0;
+var cfgRig    = 'auto';
+var cfgBl     = 'auto';
+var cfgBlVal  = 128;
+
+function fmtPort(p) { return p ? String(p) : 'AUTO'; }
+
+var _blTimer = null;
+function applyBacklight() {
+  state.bl_mode = cfgBl;
+  state.bl_brightness = cfgBlVal;
+  if (typeof reapplyTheme === 'function') reapplyTheme();  // instant local update for AUTO theme
+  clearTimeout(_blTimer);
+  _blTimer = setTimeout(function() {
+    send({cmd:'set_backlight', mode:cfgBl, brightness:cfgBlVal});
+  }, 40);
+}
+
+function syncBlUI() {
+  var slider = document.getElementById('bl-slider');
+  slider.value    = cfgBlVal;
+  slider.disabled = cfgBl === 'auto';
+  var opts = document.querySelectorAll('.bl-opt');
+  for (var i=0;i<opts.length;i++)
+    opts[i].className = 'bl-opt'+(opts[i].dataset.bl===cfgBl?' active':'');
+}
+
+function buildOctetSpinners() {
+  var grp = document.getElementById('octet-group');
+  grp.innerHTML = '';
+  for (var i=0; i<4; i++) {
+    if (i>0) {
+      var sep = document.createElement('div');
+      sep.className='octet-sep'; sep.textContent='.'; grp.appendChild(sep);
+    }
+    var s = document.createElement('div');
+    s.className = 'spinner';
+    s.innerHTML =
+      '<button class="spin-btn" data-target="oct" data-idx="'+i+'" data-dir="1">▲</button>'+
+      '<div class="spinner-val" id="oct-val-'+i+'">'+cfgOctets[i]+'</div>'+
+      '<button class="spin-btn" data-target="oct" data-idx="'+i+'" data-dir="-1">▼</button>';
+    grp.appendChild(s);
+  }
+}
+
+function setTab(tab) {
+  var tabs = document.querySelectorAll('.stab');
+  for (var i = 0; i < tabs.length; i++)
+    tabs[i].className = 'stab' + (tabs[i].dataset.tab === tab ? ' active' : '');
+  var panes = document.querySelectorAll('.spane');
+  for (var j = 0; j < panes.length; j++)
+    panes[j].className = 'spane' + (panes[j].dataset.pane === tab ? ' active' : '');
+}
+
+function openSettings() {
+  var parts = state.cfg_host.split('.');
+  for (var i=0;i<4;i++) cfgOctets[i]=parseInt(parts[i])||0;
+  cfgPort  = state.cfg_port;
+  cfgRig   = state.cfg_rig;
+  cfgBl    = state.bl_mode;
+  cfgBlVal = state.bl_brightness;
+  buildOctetSpinners();
+  document.getElementById('port-val').textContent = fmtPort(cfgPort);
+  var opts = document.querySelectorAll('.rig-opt');
+  for (var j=0;j<opts.length;j++)
+    opts[j].className = 'rig-opt'+(opts[j].dataset.rig===cfgRig?' active':'');
+  syncBlUI();
+  setTab('rig');
+  document.getElementById('settings').classList.add('open');
+}
+
+document.getElementById('settings-tabs').addEventListener('click', function(e) {
+  var t = e.target.closest('.stab');
+  if (t) setTab(t.dataset.tab);
+});
+
+function closeSettings() {
+  document.getElementById('settings').classList.remove('open');
+}
+
+document.getElementById('rig-status').addEventListener('click', openSettings);
+
+// rig selector — sets port to the rig's default, or 0 for auto
+document.getElementById('rig-selector').addEventListener('click', function(e) {
+  var opt = e.target.closest('.rig-opt');
+  if (!opt) return;
+  cfgRig  = opt.dataset.rig;
+  cfgPort = DEFAULT_PORTS[cfgRig] || 0;
+  document.getElementById('port-val').textContent = fmtPort(cfgPort);
+  var opts = document.querySelectorAll('.rig-opt');
+  for (var j=0;j<opts.length;j++)
+    opts[j].className='rig-opt'+(opts[j].dataset.rig===cfgRig?' active':'');
+});
+
+// backlight mode toggle — applies immediately
+document.getElementById('bl-selector').addEventListener('click', function(e) {
+  var opt = e.target.closest('.bl-opt');
+  if (!opt) return;
+  cfgBl = opt.dataset.bl;
+  syncBlUI();
+  applyBacklight();
+});
+
+// backlight slider — live apply (forces manual mode if in auto)
+document.getElementById('bl-slider').addEventListener('input', function(e) {
+  cfgBlVal = parseInt(e.target.value);
+  if (cfgBl !== 'manual') { cfgBl = 'manual'; syncBlUI(); }
+  applyBacklight();
+});
+
+document.getElementById('settings').addEventListener('click', function(e) {
+  var btn = e.target.closest('.spin-btn');
+  if (btn) {
+    var dir = parseInt(btn.dataset.dir);
+    if (btn.dataset.target==='oct') {
+      var idx=parseInt(btn.dataset.idx);
+      cfgOctets[idx]=Math.max(0,Math.min(255,cfgOctets[idx]+dir));
+      document.getElementById('oct-val-'+idx).textContent=cfgOctets[idx];
+    } else if (btn.dataset.target==='port' && cfgRig !== 'auto') {
+      cfgPort=Math.max(1,Math.min(65535,cfgPort+dir));
+      document.getElementById('port-val').textContent=fmtPort(cfgPort);
+    }
+    return;
+  }
+  if (e.target===document.getElementById('settings')) closeSettings();
+});
+
+// knob tunes port while settings open
+window.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  var delta = e.deltaX!==0 ? e.deltaX : e.deltaY;
+  if (Math.abs(delta)<0.01) return;
+  if (document.getElementById('settings').classList.contains('open')) {
+    if (cfgRig === 'auto') return;
+    cfgPort=Math.max(1,Math.min(65535,cfgPort+(delta>0?1:-1)));
+    document.getElementById('port-val').textContent=fmtPort(cfgPort);
+  } else {
+    tune(delta>0?1:-1);
+  }
+}, {passive:false});
+
+document.getElementById('cfg-connect').addEventListener('click', function() {
+  var host = cfgOctets.join('.');
+  send({cmd:'set_config', host:host, port:cfgPort, rig:cfgRig});
+  state.cfg_host=host; state.cfg_port=cfgPort; state.cfg_rig=cfgRig;
+  rebuildModeRow();
+  closeSettings();
+  render();
+});
+document.getElementById('cfg-cancel').addEventListener('click', closeSettings);
+
+// ── Presets ────────────────────────────────────────────────────────────────
+var presets = (function() {
+  try {
+    var s = JSON.parse(localStorage.getItem('sdr-presets'));
+    if (s && s.length === 4) return s;
+  } catch(e) {}
+  return [
+    {freq:7100000,   mode:'LSB', bw:2700},
+    {freq:14200000,  mode:'USB', bw:2700},
+    {freq:144800000, mode:'FM',  bw:15000},
+    {freq:432000000, mode:'FM',  bw:15000},
+  ];
+})();
+
+function savePresets() {
+  try { localStorage.setItem('sdr-presets', JSON.stringify(presets)); } catch(e) {}
+}
+
+function recallPreset(idx) {
+  var p = presets[idx];
+  if (!p) return;
+  state.freq = p.freq; state.mode = p.mode;
+  send({cmd:'set_freq', freq:p.freq});
+  send({cmd:'set_mode', mode:p.mode, bw:p.bw||0});
+  render();
+  openPresetPopup(1000);
+}
+
+function savePreset(idx) {
+  presets[idx] = {freq:state.freq, mode:state.mode, bw:state.bw};
+  savePresets();
+  openPresetPopup(1600);
+  showToast('PRESET ' + (idx+1) + ' SAVED');
+}
+
+function freqLabel(hz) {
+  if (hz >= 1e9) return (hz/1e9).toFixed(3).replace(/\.?0+$/,'') + ' GHz';
+  if (hz >= 1e6) return (hz/1e6).toFixed(3).replace(/\.?0+$/,'') + ' MHz';
+  if (hz >= 1e3) return (hz/1e3).toFixed(1).replace(/\.?0+$/,'') + ' kHz';
+  return hz + ' Hz';
+}
+
+function renderPresetPopup() {
+  var list = document.getElementById('preset-list');
+  list.innerHTML = '';
+  presets.forEach(function(p, i) {
+    var tile = document.createElement('div');
+    tile.className = 'preset-tile';
+    tile.innerHTML =
+      '<div class="pt-num">' + (i+1) + '</div>' +
+      '<div class="pt-info">' +
+        '<div class="pt-freq">' + freqLabel(p.freq) + '</div>' +
+        '<div class="pt-mode">' + (MODE_LABELS[p.mode] || p.mode) + '</div>' +
+      '</div>';
+    tile.addEventListener('click', function() { recallPreset(i); });
+    list.appendChild(tile);
+  });
+}
+
+var _popTimer = null;
+function openPresetPopup(autoCloseMs) {
+  if (document.getElementById('settings').classList.contains('open')) return;
+  clearTimeout(_popTimer);
+  _popTimer = null;
+  renderPresetPopup();
+  document.getElementById('preset-popup').classList.add('open');
+  document.getElementById('preset-backdrop').classList.add('open');
+  if (autoCloseMs) _popTimer = setTimeout(closePresetPopup, autoCloseMs);
+}
+function closePresetPopup() {
+  clearTimeout(_popTimer); _popTimer = null;
+  document.getElementById('preset-popup').classList.remove('open');
+  document.getElementById('preset-backdrop').classList.remove('open');
+}
+
+document.getElementById('preset-backdrop').addEventListener('click', closePresetPopup);
+document.getElementById('preset-backdrop').addEventListener('touchstart', function() { closePresetPopup(); }, {passive:true});
+
+// swipe down from topbar to open presets
+(function() {
+  var sy = null;
+  var tb = document.getElementById('topbar');
+  tb.addEventListener('touchstart', function(e) { sy = e.touches[0].clientY; }, {passive:true});
+  tb.addEventListener('touchmove', function(e) {
+    if (sy === null) return;
+    if (e.touches[0].clientY - sy > 28) { sy = null; openPresetPopup(); }
+  }, {passive:true});
+  tb.addEventListener('touchend', function() { sy = null; }, {passive:true});
+})();
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+var _toastTimer = null;
+function showToast(msg) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(function() { el.classList.remove('show'); }, 1400);
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────────────
+var _keyHeld  = {};       // preset long-press timers for 1-4
+var _stepHeld = {};       // step-cycle repeat timers for Enter/Escape
+
+function startStepRepeat(key, fn) {
+  if (_stepHeld[key]) return;  // already held
+  fn();
+  var delay = setTimeout(function() {
+    _stepHeld[key] = setInterval(fn, 120);
+  }, 400);
+  _stepHeld[key] = delay;  // temporary handle, replaced when interval starts
+}
+function stopStepRepeat(key) {
+  clearTimeout(_stepHeld[key]);
+  clearInterval(_stepHeld[key]);
+  _stepHeld[key] = null;
+}
+
+window.addEventListener('keydown', function(e) {
+  if (e.repeat) return;
+  if (document.getElementById('settings').classList.contains('open')) {
+    if (e.key === 'Escape') closeSettings();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (document.getElementById('preset-popup').classList.contains('open')) {
+      closePresetPopup(); return;
+    }
+    startStepRepeat('Escape', function() { cycleStep(-1); });
+    return;
+  }
+  if (e.key === 'Enter') {
+    startStepRepeat('Enter', function() { cycleStep(1); });
+    return;
+  }
+  switch(e.key) {
+    case 'm': case 'M':
+      _keyHeld['m'] = setTimeout(function() {
+        _keyHeld['m'] = 'fired';
+        openSettings();
+      }, 700);
+      break;
+    case '1': case '2': case '3': case '4': {
+      var idx = parseInt(e.key) - 1;
+      _keyHeld[e.key] = setTimeout(function() {
+        _keyHeld[e.key] = 'fired';
+        savePreset(idx);
+      }, 700);
+      break;
+    }
+  }
+});
+window.addEventListener('keyup', function(e) {
+  if (e.key === 'Enter' || e.key === 'Escape') { stopStepRepeat(e.key); return; }
+  if (e.key === 'm' || e.key === 'M') {
+    var tm = _keyHeld['m'];
+    if (tm && tm !== 'fired') { clearTimeout(tm); cycleMode(); }
+    _keyHeld['m'] = null;
+    return;
+  }
+  if ('1234'.indexOf(e.key) === -1) return;
+  var t = _keyHeld[e.key];
+  if (t && t !== 'fired') { clearTimeout(t); recallPreset(parseInt(e.key) - 1); }
+  _keyHeld[e.key] = null;
+});
+
+// ── Touch: freq digits ─────────────────────────────────────────────────────
+document.getElementById('freq-digits').addEventListener('click', function(e) {
+  var digit = e.target.closest('.fd-digit');
+  if (!digit) return;
+  var s = parseInt(digit.dataset.step);
+  var idx = STEPS.indexOf(s);
+  if (idx !== -1) { stepIdx = idx; render(); }
+});
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+// ── Theme ──────────────────────────────────────────────────────────────────
+// Modes: 'dark' | 'light' | 'auto' (follows display brightness w/ hysteresis).
+var _themeMode    = 'dark';
+var _actualTheme  = 'dark';
+var THEME_HI = 160;  // switch to light when brightness >= this
+var THEME_LO = 160;  // switch back to dark when brightness <  this
+
+function _setActualTheme(t) {
+  if (t === _actualTheme) return;
+  _actualTheme = t;
+  document.documentElement.className = (t === 'light') ? 'light' : '';
+}
+
+function _computeAutoTheme() {
+  var b = state.bl_brightness;
+  if (typeof b !== 'number') return _actualTheme;
+  if (_actualTheme === 'dark') return b >= THEME_HI ? 'light' : 'dark';
+  return b < THEME_LO ? 'dark' : 'light';
+}
+
+function reapplyTheme() {
+  _setActualTheme(_themeMode === 'auto' ? _computeAutoTheme() : _themeMode);
+}
+
+function setThemeMode(mode) {
+  _themeMode = mode;
+  try { localStorage.setItem('sdr-theme', mode); } catch(e) {}
+  var opts = document.querySelectorAll('.theme-opt');
+  for (var i = 0; i < opts.length; i++)
+    opts[i].className = 'theme-opt' + (opts[i].dataset.theme === mode ? ' active' : '');
+  reapplyTheme();
+}
+
+document.getElementById('theme-selector').addEventListener('click', function(e) {
+  var opt = e.target.closest('.theme-opt');
+  if (opt) setThemeMode(opt.dataset.theme);
+});
+setThemeMode((function() {
+  try { return localStorage.getItem('sdr-theme') || 'dark'; } catch(e) { return 'dark'; }
+})());
+
+// ── Proximity auto-hide ────────────────────────────────────────────────────
+var PROX_WAKE  = 75;    // idle reads ~0; 75 is comfortably clear of noise
+var PROX_SLEEP = 30;    // drop below this to allow idling (small hysteresis)
+var IDLE_MS    = 3000;  // grace after last interaction
+
+var _proxHide    = true;
+var _activeUntil = 0;
+var _uiIdle      = false;
+
+function bumpActive() { _activeUntil = Date.now() + IDLE_MS; }
+
+function checkIdle() {
+  var overlayOpen =
+    document.getElementById('settings').classList.contains('open') ||
+    document.getElementById('preset-popup').classList.contains('open');
+  var should;
+  if (!_proxHide || overlayOpen) {
+    should = false;
+  } else {
+    var now  = Date.now();
+    var near = (state.prox != null) && state.prox >= PROX_SLEEP;
+    should = (now > _activeUntil) && !near;
+  }
+  if (should !== _uiIdle) {
+    _uiIdle = should;
+    document.body.classList.toggle('ui-idle', _uiIdle);
+  }
+  updateAudioPanelOpen();
+}
+
+// ── Audio panel ────────────────────────────────────────────────────────────
+var _audioPanelManual = false;  // user's swipe-up toggle (only used when prox-hide off)
+
+function updateAudioPanelOpen() {
+  var profile = PROFILES[activeRig()];
+  var gqrxReady = profile && profile.hasBw;  // panel is gqrx-only
+  var shouldOpen;
+  if (!gqrxReady) {
+    shouldOpen = false;
+  } else if (_proxHide) {
+    // auto-hide mode: panel follows active/idle (mirrors proximity wake)
+    shouldOpen = !_uiIdle;
+  } else {
+    // manual mode: panel toggled via swipe-up
+    shouldOpen = _audioPanelManual;
+  }
+  document.body.classList.toggle('ap-open', shouldOpen);
+}
+
+function syncAudioPanel() {
+  if (state.af !== null && typeof state.af === 'number') {
+    var el = document.getElementById('af-slider');
+    if (document.activeElement !== el)  // don't fight user while they drag
+      el.value = Math.round(state.af);
+  }
+  document.getElementById('rec-btn').className = 'ap-btn' + (state.rec ? ' active' : '');
+  document.getElementById('dsp-btn').className = 'ap-btn' + (state.dsp ? ' active' : '');
+}
+
+var _afSendTimer = null;
+document.getElementById('af-slider').addEventListener('input', function(e) {
+  var val = parseFloat(e.target.value);  // dB
+  state.af = val;
+  clearTimeout(_afSendTimer);
+  _afSendTimer = setTimeout(function() { send({cmd:'set_af', af:val}); }, 40);
+});
+document.getElementById('rec-btn').addEventListener('click', function() {
+  state.rec = !state.rec;
+  send({cmd:'set_rec', rec: state.rec});
+  syncAudioPanel();
+});
+document.getElementById('dsp-btn').addEventListener('click', function() {
+  state.dsp = !state.dsp;
+  send({cmd:'set_dsp', dsp: state.dsp});
+  syncAudioPanel();
+});
+
+// swipe-up from the bottom edge toggles the audio panel (when prox-hide is off)
+(function() {
+  var sy = null;
+  document.addEventListener('touchstart', function(e) {
+    if (_proxHide) { sy = null; return; }
+    var y = e.touches[0].clientY;
+    // Start near the bottom (last 60px) or inside the panel if it's open
+    if (y > window.innerHeight - 60) sy = y;
+    else sy = null;
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (sy === null) return;
+    var dy = sy - e.touches[0].clientY;
+    if (dy > 28) {
+      sy = null;
+      _audioPanelManual = !_audioPanelManual;
+      updateAudioPanelOpen();
+    }
+  }, {passive: true});
+  document.addEventListener('touchend', function() { sy = null; }, {passive: true});
+})();
+setInterval(checkIdle, 150);
+
+// any user input wakes UI
+['touchstart','mousedown','keydown','wheel'].forEach(function(ev) {
+  document.addEventListener(ev, bumpActive, true);
+});
+
+function setProxHide(on) {
+  _proxHide = (on === 'on' || on === true);
+  try { localStorage.setItem('sdr-prox-hide', _proxHide ? 'on' : 'off'); } catch(e) {}
+  var opts = document.querySelectorAll('.prox-opt');
+  var want = _proxHide ? 'on' : 'off';
+  for (var i = 0; i < opts.length; i++)
+    opts[i].className = 'prox-opt' + (opts[i].dataset.prox === want ? ' active' : '');
+  bumpActive();  // reset so the UI shows immediately when turning off
+  checkIdle();
+}
+
+document.getElementById('prox-selector').addEventListener('click', function(e) {
+  var opt = e.target.closest('.prox-opt');
+  if (opt) setProxHide(opt.dataset.prox);
+});
+setProxHide((function() {
+  try { return localStorage.getItem('sdr-prox-hide') || 'on'; } catch(e) { return 'on'; }
+})());
+
+bumpActive();  // start in the active state
+
+rebuildModeRow();
+render();
+connectWS();
+})();
+</script>
+</body>
+</html>
